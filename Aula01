@@ -1,0 +1,77 @@
+; bootloader.asm - Bootloader básico em Assembly x86
+; Este bootloader é carregado pela BIOS no endereço 0x7C00 e exibe uma mensagem na tela
+
+[org 0x7c00]        ; Define que o código será carregado no endereço 0x7C00 (padrão da BIOS)
+[bits 16]           ; Especifica que estamos trabalhando em modo real de 16 bits
+
+start:
+    ; === CONFIGURAÇÃO INICIAL DOS SEGMENTOS ===
+    ; No modo real, a memória é acessada através de segmentos de 64KB
+    ; Precisamos configurar os registradores de segmento para apontar para o início da memória
+    
+    xor ax, ax      ; Zera o registrador AX (mais eficiente que mov ax, 0)
+    mov ds, ax      ; Data Segment = 0 (segmento de dados)
+    mov es, ax      ; Extra Segment = 0 (segmento extra para operações de string)
+    mov ss, ax      ; Stack Segment = 0 (segmento da pilha)
+    
+    ; === CONFIGURAÇÃO DA PILHA ===
+    ; A pilha cresce de cima para baixo na memória
+    ; Colocamos o stack pointer logo abaixo do bootloader para evitar sobrescrever o código
+    mov sp, 0x7c00  ; Stack Pointer = 0x7C00 (cresce para baixo a partir deste ponto)
+    
+    ; === EXIBIÇÃO DA MENSAGEM ===
+    ; Prepara para chamar a função que imprime a string
+    mov si, mensagem    ; SI (Source Index) aponta para o início da string
+    call print_string  ; Chama a função para imprimir a string
+    
+    ; === LOOP INFINITO ===
+    ; Após exibir a mensagem, o bootloader entra em loop infinito
+    ; O símbolo '$' representa o endereço da instrução atual
+    jmp $           ; Salta para a própria instrução (loop infinito)
+
+; === FUNÇÃO PARA IMPRIMIR STRING ===
+; Esta função imprime uma string terminada em null (0)
+; Entrada: SI = ponteiro para a string
+; Saída: string impressa na tela
+print_string:
+    ; Loop principal da função
+    lodsb           ; LOaD String Byte: carrega byte de [SI] em AL e incrementa SI
+                    ; Equivale a: mov al, [si] + inc si
+    
+    or al, al       ; Verifica se AL é zero (fim da string)
+                    ; OR com o próprio valor é uma forma eficiente de testar se é zero
+                    ; Afeta as flags do processador
+    
+    jz done         ; Jump if Zero: se AL = 0, pula para 'done' (fim da string)
+    
+    ; === CHAMADA DA BIOS PARA IMPRIMIR CARACTERE ===
+    mov ah, 0x0e    ; Função 0x0E da BIOS: "Teletype Output"
+                    ; AH = código da função, AL já contém o caractere a ser impresso
+    
+    int 0x10        ; Interrupção 0x10: serviços de vídeo da BIOS
+                    ; A BIOS imprime o caractere em AL na posição atual do cursor
+    
+    jmp print_string ; Volta para o início da função para processar próximo caractere
+
+done:
+    ret             ; RETurn: retorna para quem chamou a função
+
+; === DADOS ===
+; Define a mensagem que será exibida
+mensagem db 'Meu Bootloader Funcionando. Teste ok!', 0  ; db = Define Byte
+                                               ; String terminada em null (0)
+
+; === PREENCHIMENTO E ASSINATURA ===
+; O bootloader deve ter exatamente 512 bytes (setor de boot padrão)
+
+; Preenche o restante do setor com zeros até o byte 510
+times 510-($-$$) db 0   ; times = repete a instrução
+                        ; $ = endereço atual
+                        ; $$ = início da seção
+                        ; ($-$$) = tamanho atual do código
+                        ; 510-($-$$) = quantos zeros adicionar
+
+; Assinatura obrigatória do bootloader (bytes 511 e 512)
+dw 0xaa55              ; dw = Define Word (2 bytes)
+                       ; 0xAA55 é a assinatura mágica que indica que este é um setor bootável
+                       ; A BIOS procura por esta assinatura para identificar bootloaders válidos
